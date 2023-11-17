@@ -6,6 +6,7 @@ from nltk.stem.porter import PorterStemmer
 from sacremoses import MosesTokenizer
 import string
 import re
+import contractions
 from urllib.parse import urldefrag
 
 # Example structure for a token in the index
@@ -20,7 +21,20 @@ def default_flags(): # Create a dictionary with all tags set to False
 # Initialize the stemmer and tokenizer
 stemmer = PorterStemmer()
 tokenizer = MosesTokenizer()
-    
+
+# handles pre-processing specifically for apostrophes
+def preProcess(text):
+    # Expand contractions
+    text = contractions.fix(text)
+
+    # Tokenize the text
+    tokens = word_tokenize(text)
+
+    # Stem the tokens
+    stemmed_tokens = [stemmer.stem(token) for token in tokens]
+
+    return stemmed_tokens
+
 def normalize(url):
     url = urldefrag(url)[0].lower()
     
@@ -37,17 +51,24 @@ def normalize(url):
 def read_json_chunk(file, chunk_size=20*1024*1024):  # 20MB FIX THE CHUNKING LATER
     chunk = file.read(chunk_size)
     brace_level = 0
+    start_index = 0
     i = 0
 
     for i, char in enumerate(chunk):
         if char == '{':
+            if brace_level == 0:
+                start_index = i
             brace_level += 1
         elif char == '}':
             brace_level -= 1
             if brace_level == 0:
-                break
+                yield chunk[start_index:i + 1]
 
-    return chunk[:i+1]  # Return a valid JSON string
+    if brace_level > 0:
+        remaining_chunk = file.read()
+        yield chunk[start_index:] + remaining_chunk
+
+    # return chunk[:i+1]  # Return a valid JSON string
 
 def create_intermediate_files(intermediate_dir):
     intermediate_path = Path(intermediate_dir)
