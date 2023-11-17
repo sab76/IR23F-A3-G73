@@ -22,8 +22,10 @@ def default_flags(): # Create a dictionary with all tags set to False
 stemmer = PorterStemmer()
 tokenizer = MosesTokenizer()
 
+
+
 # handles pre-processing specifically for apostrophes
-def preProcess(text):
+def preprocess(text):
     # Expand contractions
     text = contractions.fix(text)
 
@@ -132,6 +134,16 @@ def merge_and_sort_token_data(intermediate_dir, final_index_dir): #MODIFY THIS T
                     json.dump(entry, f)
                     f.write("\n")
 
+# removes the need for intermediate file function usage
+# merges all partial indexes into one file without creating intermediate files
+# reduces number of file ops & data resorts
+def direct_merge_partial_indices(partial_index_paths, final_index_file_path):
+    with open(final_index_file_path, 'w') as final_file:
+        for path in sorted(partial_index_paths):
+            with open(path, 'r') as partial_file:
+                for line in partial_file:
+                    final_file.write(line)
+
 def store_doc_id_map(doc_id_map, filename="doc_id_map.json"):
     file_path = Path(filename)
     with file_path.open('w') as f:
@@ -158,20 +170,30 @@ def parse_html(file_content):
 
     for tag in soup.find_all(True):
         is_title = tag.name == 'title'
-        tokens = tokenizer.tokenize(tag.get_text(), escape=False)
-        stemmed_tokens = [stemmer.stem(token) for token in tokens if token.isalnum()]
 
-        for token in stemmed_tokens:
-            flag_data = {}  # Use an empty dictionary to store only true flags
-            if is_title:
-                flag_data['title'] = True
-            if tag.name in tags:
-                flag_data[tag.name] = True
+        # call preprocessing to remove apostrophes 
+        preprocessed_text = preprocess(tag.get_text())
 
-            # Only store flag_data if it's not empty
-            if flag_data:
-                text_elements[token].append({'position': token_position, 'flags': flag_data})
-            token_position += 1
+        for raw_token in preprocessed_text:
+            # Tokenize each preprocessed token
+            tokens = tokenizer.tokenize(raw_token, escape=False)
+            
+            # Stem each token and check if it's alphanumeric
+            for token in tokens:
+                if token.isalnum():  # Filtering non-alphanumeric tokens
+                    stemmed_token = stemmer.stem(token)
+                    
+                    # Flag data for each stemmed token
+                    flag_data = {}
+                    if is_title:
+                        flag_data['title'] = True
+                    if tag.name in tags:
+                        flag_data[tag.name] = True
+
+                    # Store flag data if it's not empty
+                    if flag_data:
+                        text_elements[stemmed_token].append({'position': token_position, 'flags': flag_data})
+                    token_position += 1
 
     return text_elements
 
@@ -235,6 +257,7 @@ def make_index(base_path, test_limit, doc_threshold=1000):
 
     return doc_id_map
 
+
 def store_sorted_indices(partial_index, index_num):
     sorted_index = {k: partial_index[k] for k in sorted(partial_index)}
     file_path = Path(f"partial_index{index_num}.json")
@@ -248,10 +271,13 @@ if __name__ == "__main__":
     doc_id_map = make_index(base_path, test_limit)
     store_doc_id_map(doc_id_map)
 
-    intermediate_dir = 'C:/Users/sabin/Documents/cs 121/A3 1/intermediate'
-    create_intermediate_files(intermediate_dir)
+    partial_dir = 'C:/Users/sabin/Documents/cs 121/A3 1'
+    partial_paths = list(Path(partial_dir).glob('partial_index*.json'))
+
 
     final_index_dir = 'C:/Users/sabin/Documents/cs 121/A3 1'
-    merge_and_sort_token_data(intermediate_dir, final_index_dir)
+    final_index_file = Path(final_index_dir) / "final_index.json"
+
+    direct_merge_partial_indices(partial_paths, final_index_file)
 
 
